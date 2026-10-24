@@ -72,6 +72,7 @@ jobs:
         run: ./unixnu build payload
 
       - name: Upload kernel and payload
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: ruyi-kernel-payload
