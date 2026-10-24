@@ -1,0 +1,159 @@
+name: ruyi full boot image (kernel -> firmware -> boot.img)
+
+# Builds everything a "fastboot boot" needs for the Xiaomi MIX Flip (ruyi, SM8650):
+#   job kernel   (macOS):  XNU kernel + payload FAT volume
+#   job firmware (ubuntu): EDK II UEFI with DarwinBoot + the boot image (shim + FD + DTB + payload ramdisk)
+#
+# The artifacts contain Apple-derived binaries (the prelinked kernel and the payload). They stay in
+# this repository's action artifacts and are not published anywhere else.
+
+on:
+  workflow_dispatch:
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+  HOMEBREW_NO_ENV_HINTS: 1
+  DEFCONFIG: ruyi_defconfig
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  kernel:
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      UNIXNU_DEVICE: ${{ github.workspace }}/device
+    steps:
+      - name: Check out UniXNU
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check out the ruyi device repository
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/UniXNU-ruyi
+          ref: main
+          path: device
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Select Xcode
+        run: |
+          # Newest Xcode: older clangs reject warning options the XNU build passes.
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Selected $XC"
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version 2>/dev/null | head -n 1 || true
+
+      - name: Install host tools
+        run: |
+          brew install llvm lld mtools dtc
+          if ! command -v unifdef >/dev/null; then
+            brew install unifdef
+            echo "$(brew --prefix unifdef)/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Select the device
+        run: ./unixnu defconfig "$DEFCONFIG"
+
+      - name: Build kernel
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./unixnu build kernel
+
+      - name: Build payload
+        run: ./unixnu build payload
+
+      - name: Upload kernel and payload
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruyi-kp
+          path: |
+            out/ruyi/kernel/**
+            out/ruyi/payload/**
+            out/ruyi/logs/**
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 1
+
+  firmware:
+    needs: kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      UNIXNU_DEVICE: ${{ github.workspace }}/device
+    steps:
+      - name: Check out UniXNU
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out the ruyi device repository
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/UniXNU-ruyi
+          ref: main
+          path: device
+
+      - name: Check out the Mu-Silicium tree with ruyiPkg
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/Mu-Silicium
+          ref: main
+          path: uefi
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git python3-venv uuid-dev nasm \
+            clang lld llvm acpica-tools device-tree-compiler mtools
+          # EDK II's CLANGPDB needs unversioned lld-link / llvm-lib / llvm-rc.
+          for t in clang lld-link llvm-lib llvm-rc llvm-objcopy llvm-nm; do
+            if ! command -v "$t" >/dev/null; then
+              v=$(command -v "$t"-18 2>/dev/null || command -v "$t"-19 2>/dev/null || command -v "$t"-17 2>/dev/null || true)
+              if [ -n "$v" ]; then sudo ln -sf "$v" "/usr/local/bin/$t"; fi
+            fi
+            printf '%-14s %s\n' "$t" "$(command -v "$t" || echo MISSING)"
+          done
+
+      - name: Download the kernel and payload
+        uses: actions/download-artifact@v7
+        with:
+          name: ruyi-kp
+          path: out/ruyi
+
+      - name: Select the device
+        run: ./unixnu defconfig "$DEFCONFIG"
+
+      - name: Build firmware
+        run: ./unixnu build firmware --uefi uefi --edk2 uefi/Mu_Basecore
+
+      - name: Pack the boot image
+        run: ./unixnu bootimg --uefi uefi --dtb uefi/Resources/DTBs/ruyi.dtb
+
+      - name: Upload the boot image
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruyi-boot
+          path: |
+            out/ruyi/boot/**
+            out/ruyi/logs/**
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 1
