@@ -1,0 +1,81 @@
+name: ruyi firmware only (with DarwinBoot)
+
+# Builds the device UEFI (EDK II) through UniXNU's own driver, which puts the build tree
+# (UniXNUPkg, DarwinBootPkg) on PACKAGES_PATH -- Mu-Silicium's build_uefi.py does not, so the
+# UniXNU/DarwinBoot components cannot be built there.
+#
+# No kernel and no payload are needed: the payload travels in the boot image as its ramdisk.
+
+on:
+  workflow_dispatch:
+
+env:
+  UNIXNU_DEVICE: ${{ github.workspace }}/device
+  DEFCONFIG: ruyi_defconfig
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out UniXNU
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out the ruyi device repository
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/UniXNU-ruyi
+          ref: main
+          path: device
+
+      - name: Check out the Mu-Silicium tree with ruyiPkg
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/Mu-Silicium
+          ref: main
+          path: uefi
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git python3-venv uuid-dev nasm \
+            clang lld llvm acpica-tools device-tree-compiler mtools
+          for t in clang lld-link llvm-lib llvm-rc llvm-objcopy llvm-nm; do
+            if ! command -v "$t" >/dev/null; then
+              v=$(command -v "$t"-18 2>/dev/null || command -v "$t"-19 2>/dev/null || command -v "$t"-17 2>/dev/null || true)
+              if [ -n "$v" ]; then sudo ln -sf "$v" "/usr/local/bin/$t"; fi
+            fi
+            printf '%-14s %s\n' "$t" "$(command -v "$t" || echo MISSING)"
+          done
+
+      - name: Select the device
+        run: ./unixnu defconfig "$DEFCONFIG"
+
+      - name: Build firmware
+        run: ./unixnu build firmware --uefi uefi --edk2 uefi/Mu_Basecore
+
+      - name: Upload the firmware volume
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruyi-fd
+          path: |
+            uefi/Build/ruyiPkg/**/FV/*.fd
+            uefi/Build/BUILDLOG_ruyiPkg.txt
+            out/ruyi/logs/**
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 1
