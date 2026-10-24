@@ -1,0 +1,92 @@
+name: ruyi kernel + payload (artifacts)
+
+# Builds the ruyi (Xiaomi MIX Flip, SM8650) kernel and payload on a macOS runner and
+# keeps the resulting kernel.macho and payload as workflow artifacts, so the boot image
+# can be assembled locally on Linux.
+#
+# Note: the artifacts contain Apple-derived binaries (the prelinked kernel). They stay in
+# this repository's action artifacts (retention-days: 3) and are not published anywhere else.
+
+on:
+  workflow_dispatch:
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+  HOMEBREW_NO_ENV_HINTS: 1
+  UNIXNU_DEVICE: ${{ github.workspace }}/device
+  DEFCONFIG: ruyi_defconfig
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 180
+    steps:
+      - name: Check out UniXNU
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check out the ruyi device repository
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/UniXNU-ruyi
+          ref: main
+          path: device
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Select Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version 2>/dev/null | head -n 1 || true
+
+      - name: Install host tools
+        run: |
+          brew install llvm lld mtools dtc
+          if ! command -v unifdef >/dev/null; then
+            brew install unifdef
+            echo "$(brew --prefix unifdef)/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Select the device
+        run: ./unixnu defconfig "$DEFCONFIG"
+
+      - name: Build kernel
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./unixnu build kernel
+
+      - name: Build payload
+        run: ./unixnu build payload
+
+      - name: Upload kernel and payload
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruyi-kernel-payload
+          path: |
+            out/ruyi/kernel/kernel.macho
+            out/ruyi/kernel/**
+            out/ruyi/payload/**
+            out/ruyi/logs/**
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 1
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## ruyi kernel + payload"
+            echo
+            ls -la out/ruyi/kernel/ 2>/dev/null || true
+            ls -la out/ruyi/payload/ 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
