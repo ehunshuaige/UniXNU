@@ -1,0 +1,73 @@
+name: ruyi userdata image
+
+# Builds the userdata image the kernel needs to mount a root volume (unixnu build userdata).
+# Read-only with respect to the device: nothing is flashed here. The image is split into
+# parts so the artifact stays within the upload limits, and SHA-256 is recorded.
+#
+# The IPSW is read with HTTP range requests, so only the members the build needs are fetched.
+
+on:
+  workflow_dispatch:
+
+env:
+  UNIXNU_DEVICE: ${{ github.workspace }}/device
+  DEFCONFIG: ruyi_defconfig
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  userdata:
+    runs-on: macos-26
+    timeout-minutes: 300
+    steps:
+      - name: Report free space
+        run: df -h /
+
+      - name: Check out UniXNU
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check out the ruyi device repository
+        uses: actions/checkout@v7
+        with:
+          repository: ehunshuaige/UniXNU-ruyi
+          ref: main
+          path: device
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Select the device
+        run: ./unixnu defconfig "$DEFCONFIG"
+
+      - name: Build the userdata image
+        run: ./unixnu build userdata
+
+      - name: Report, hash and split the image
+        if: always()
+        run: |
+          set -e
+          ls -la out/ruyi/userdata/ || true
+          IMG=out/ruyi/userdata/userdata-root.img
+          if [ -f "$IMG" ]; then
+            shasum -a 256 "$IMG" | tee out/ruyi/userdata/SHA256SUMS
+            wc -c < "$IMG" | tee -a out/ruyi/userdata/SHA256SUMS
+            split -b 1800m "$IMG" out/ruyi/userdata/part-
+            ls -la out/ruyi/userdata/
+          fi
+
+      - name: Upload the userdata image
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruyi-userdata
+          path: |
+            out/ruyi/userdata/**
+            out/ruyi/logs/**
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
