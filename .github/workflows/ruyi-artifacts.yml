@@ -44,7 +44,10 @@ jobs:
 
       - name: Select Xcode
         run: |
-          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
+          # The newest installed Xcode: older clangs reject warning options the XNU build passes
+          # (e.g. -Wno-unnecessary-virtual-specifier) and -Werror turns that into a hard failure.
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Selected $XC"
           echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
           sudo xcode-select -s "$XC"
           xcodebuild -version 2>/dev/null | head -n 1 || true
