@@ -302,7 +302,9 @@ jobs:
             echo "| payload | ${PAYLOAD:-skipped} |"
             echo
             echo "This workflow only checks that the build works. It publishes text logs (7 days) and no images."
-            xcodebuild -version | head -n 1
+            # `xcodebuild -version | head -n 1` can crash with "Broken pipe" (SIGABRT) when head
+            # closes the pipe early; guard it so a successful build never fails in this summary step.
+            xcodebuild -version 2>/dev/null | head -n 1 || true
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove proprietary inputs
