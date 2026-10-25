@@ -1,8 +1,8 @@
 diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
-index bb558ee..de79717 100644
+index bb558ee..384ec9f 100644
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
-@@ -802,6 +802,28 @@ bsd_init(void)
+@@ -802,6 +802,29 @@ bsd_init(void)
  	bsd_init_kprintf("calling bsd_autoconf\n");
  	bsd_autoconf();
  
@@ -23,7 +23,8 @@ index bb558ee..de79717 100644
 +		PE_parse_boot_argn("native-ufs-root", &native_ufs_root, sizeof(native_ufs_root));
 +		PE_parse_boot_argn("native-ufs-probe", &native_ufs_probe, sizeof(native_ufs_probe));
 +		if (native_ufs_root || native_ufs_probe) {
-+			native_ufs_register();
++			/* Bisect B2: the hook is linked but the driver is never started. */
++			__asm__ volatile("" : : "r"(native_ufs_register) : "memory");
 +		}
 +	}
 +#endif /* defined(XNU_NATIVE_UFS) && XNU_NATIVE_UFS */
