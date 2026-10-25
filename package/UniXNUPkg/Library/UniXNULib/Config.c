@@ -1187,6 +1187,36 @@ AddEntry (
     }
   }
   Entry->Initrd = MakePath (UNIXNU_CONFIG_DIR, TomlGetString (Table, "initrd", NULL));
+  {
+    TOML_NODE  *Parts = TomlGet (Table, "initrd_parts");
+    TOML_NODE  *Item;
+
+    if (Parts != NULL) {
+      if ((Entry->Type != UniXNUEntryXnu) || (Parts->Type != TomlArray) || Parts->TableArray ||
+          (Entry->Initrd != NULL) || (TomlCount (Parts) == 0) || (TomlCount (Parts) > 8)) {
+        ConfigError (Config, "entry '%a': initrd_parts must be an array of 1 to 8 file paths for a type xnu entry, and cannot be combined with initrd (line %u)",
+                     (Entry->Id != NULL) ? Entry->Id : "?", (UINT32)Parts->Line);
+        Entry->ConfigInvalid = TRUE;
+      } else {
+        Entry->InitrdParts = AllocateZeroPool (TomlCount (Parts) * sizeof (CHAR16 *));
+        if (Entry->InitrdParts == NULL) {
+          ConfigError (Config, "entry '%a': cannot allocate initrd_parts", (Entry->Id != NULL) ? Entry->Id : "?");
+          Entry->ConfigInvalid = TRUE;
+        } else {
+          for (Item = Parts->Child; Item != NULL; Item = Item->Next) {
+            if (Item->Type != TomlString || Item->String == NULL || Item->String[0] == '\0') {
+              Entry->InitrdPartCount = 0;
+              Entry->ConfigInvalid = TRUE;
+              ConfigError (Config, "entry '%a': initrd_parts items must be non-empty strings (line %u)",
+                           (Entry->Id != NULL) ? Entry->Id : "?", (UINT32)Item->Line);
+              break;
+            }
+            Entry->InitrdParts[Entry->InitrdPartCount++] = MakePath (UNIXNU_CONFIG_DIR, Item->String);
+          }
+        }
+      }
+    }
+  }
   List = TomlGet (Table, "kext");
   if (List != NULL) {
     if ((Entry->Type != UniXNUEntryXnu) || (List->Type != TomlArray) || !List->TableArray) {

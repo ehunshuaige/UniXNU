@@ -218,6 +218,8 @@ typedef struct {
   UINTN            ConfirmCount;
   CHAR16           *Dtb;        ///< NULL, L"firmware" or a file path.
   CHAR16           *Initrd;
+  CHAR16           **InitrdParts;   ///< Multi-part dense initrd, in order; each a file path.
+  UINTN            InitrdPartCount;
   UNIXNU_DT_PATCH      *Patches;    ///< Entry patches, chosen properties last.
   UINTN            PatchCount;
   UNIXNU_VARIABLE      *Variables;
@@ -225,6 +227,7 @@ typedef struct {
   UNIXNU_KEXT          *Kexts;
   UINTN            KextCount;
   BOOLEAN          KextConfigError;
+  BOOLEAN          ConfigInvalid;  ///< The entry's own configuration was rejected; never boot it.
 } UNIXNU_ENTRY;
 
 typedef enum {

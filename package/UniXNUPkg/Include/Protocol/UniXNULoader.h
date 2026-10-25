@@ -17,7 +17,12 @@
   { 0x0f0a492e, 0x5a6a, 0x49f6, { 0xa1, 0xbf, 0x74, 0x3c, 0x87, 0xab, 0x1c, 0xfe } }
 
 #define UNIXNU_LOADER_REVISION_1  0x00010000
-#define UNIXNU_LOADER_REVISION    0x00020000
+#define UNIXNU_LOADER_REVISION_2  0x00020000
+// Revision 3 adds the multi-part initrd: the paths are handed to the loader, which reads
+// the parts itself and concatenates them into the one dense ramdisk (each part stays far
+// below the FAT32 single-file limit and below any loader buffer limit).
+#define UNIXNU_LOADER_REVISION_3  0x00030000
+#define UNIXNU_LOADER_REVISION    UNIXNU_LOADER_REVISION_3
 
 typedef struct _UNIXNU_LOADER_PROTOCOL UNIXNU_LOADER_PROTOCOL;
 
@@ -49,6 +54,12 @@ typedef struct {
   // Revision 2 tail. Revision 1 loaders receive only requests with no kexts.
   CONST UNIXNU_LOADER_KEXT  *Kexts;
   UINTN                   KextCount;
+  // Revision 3 tail: multi-part initrd (`initrd_parts`). Paths are absolute on the
+  // entry volume, the parts are concatenated in order, and exactly one of Ramdisk and
+  // InitrdPaths is set. The loader reads the parts itself, so no single buffer has to
+  // hold the whole image.
+  CONST CHAR16           **InitrdPaths;
+  UINTN                  InitrdPathCount;
 } UNIXNU_LOADER_BOOT_REQUEST;
 
 /**

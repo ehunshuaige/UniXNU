@@ -46,7 +46,9 @@ RunXnu (
   IN VOID      *Fdt,
   IN UINTN     FdtSize,
   IN VOID      *Ramdisk,
-  IN UINTN     RamdiskSize
+  IN UINTN     RamdiskSize,
+  IN CHAR16    **InitrdParts,
+  IN UINTN     InitrdPartCount
   )
 {
   EFI_STATUS                     Status;
@@ -79,6 +81,12 @@ RunXnu (
     return EFI_UNSUPPORTED;
   }
 
+  if ((InitrdPartCount != 0) && (Loader->Revision < UNIXNU_LOADER_REVISION_3)) {
+    UniXNULog ("xnu: multi-part initrd requires a revision 3 loader");
+    UniXNUFreeKexts (Kexts, KextCount);
+    return EFI_UNSUPPORTED;
+  }
+
   ZeroMem (&Request, sizeof (Request));
   Request.Volume         = Entry->Volume;
   Request.KernelPath     = Entry->Path;
@@ -89,6 +97,8 @@ RunXnu (
   Request.RamdiskSize    = RamdiskSize;
   Request.Kexts          = Kexts;
   Request.KextCount      = KextCount;
+  Request.InitrdPaths    = (InitrdPartCount != 0) ? (CONST CHAR16 **)InitrdParts : NULL;
+  Request.InitrdPathCount = InitrdPartCount;
   UniXNULog ("xnu: handing off %u staged kext(s) to loader", (UINT32)KextCount);
   Status = Loader->Boot (Loader, &Request);
   UniXNUFreeKexts (Kexts, KextCount);
@@ -117,8 +127,8 @@ UniXNUBootEntry (
 
   UniXNULog ("boot: entry '%a' (%s)", (Entry->Id != NULL) ? Entry->Id : "?", Entry->Title);
 
-  if (Entry->KextConfigError) {
-    UniXNULog ("kext: invalid entry configuration; boot refused");
+  if (Entry->KextConfigError || Entry->ConfigInvalid) {
+    UniXNULog ("boot: invalid entry configuration; boot refused");
     return EFI_INVALID_PARAMETER;
   }
 
@@ -162,7 +172,8 @@ UniXNUBootEntry (
   }
 
   if (Entry->Type == UniXNUEntryXnu) {
-    Status = RunXnu (Config, Entry, Fdt, FdtSize, Initrd, InitrdSize);
+    Status = RunXnu (Config, Entry, Fdt, FdtSize, Initrd, InitrdSize,
+                     Entry->InitrdParts, Entry->InitrdPartCount);
     goto Done;
   }
 
