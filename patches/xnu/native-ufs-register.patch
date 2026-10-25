@@ -1,0 +1,33 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index bb558ee..de79717 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -802,6 +802,28 @@ bsd_init(void)
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
+ 	bsd_autoconf();
+ 
++#if defined(XNU_NATIVE_UFS) && XNU_NATIVE_UFS
++	/*
++	 * Ruyi NativeUfs: the UFS driver's class initialisers are not in the
++	 * force-loaded archive's __DATA,__mod_init_func (OSRuntimeInitializeCPP()
++	 * runs that section before the prelinked IOStorageFamily kext exists, which
++	 * kills the kernel before its first console line). They are registered here,
++	 * after IOKitBSDInit has started IOKit and the kext machinery, and before the
++	 * root is mounted, and only when the boot asked for the driver: a boot
++	 * without these arguments does not execute any UFS code.
++	 */
++	{
++		extern void native_ufs_register(void);
++		int native_ufs_root = 0, native_ufs_probe = 0;
++
++		PE_parse_boot_argn("native-ufs-root", &native_ufs_root, sizeof(native_ufs_root));
++		PE_parse_boot_argn("native-ufs-probe", &native_ufs_probe, sizeof(native_ufs_probe));
++		if (native_ufs_root || native_ufs_probe) {
++			native_ufs_register();
++		}
++	}
++#endif /* defined(XNU_NATIVE_UFS) && XNU_NATIVE_UFS */
++
+ #if CONFIG_DTRACE
+ 	dtrace_postinit();
+ #endif
