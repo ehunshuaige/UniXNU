@@ -67,7 +67,7 @@
 # object directory keeps xnu's own name for it.
 "kernel" = "build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf"
 # sha256 of the decompressed arm64 slice of kernelcache.release.iphone10b.
-"kernelcache_sha256" = "2ec297bac95bcba01046fd0148e97e7e588c05a6c18827f39f534ba375c1221"
+"kernelcache_sha256" = "2ec297bac95bcba01046fd0148e97e7e5885c05a6c18827f39f534ba375c1221"
 "slide" = "-0x1000000"
 # No early_security_init: AMFI's early initializer needs an ApplePMGRNub
 # provider, which no SM8650 port builds. Deferring AMFI to normal kext loading
